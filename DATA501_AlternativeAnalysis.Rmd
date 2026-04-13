@@ -1,0 +1,182 @@
+---
+title: "DATA501_AlternativeAnalysis"
+output:
+  html_document:
+    df_print: paged
+date: "2026-04-02"
+---
+
+#---------This is the alternative analysis we ran--------------------------
+
+#in our report we do discuss some of the reasons we are struggling by just using a linear regression. We note that stock price volatility data is heavily right skewed hence why we used the log transformation and winsoriziation just to meet basic linear assumptions
+
+#Yiyu reccomended we do panel quantile regression. 
+#I will continue to use the transformed variables for the PQR. Maintaining the transformation used in the inital analysis ensures that the new results are directly comparable to the original findings and remain statistically sound. 
+#overall, PQR will help us see how ESG momentum affects stock price volatility across different volatility quantiles (specifically focusing on the 90th percetile, tau = 0.90) which represents the periods of market panic
+
+#load in dataframe, and apply all the same transformations we did in the original analysis 
+
+```{r}
+getwd()
+
+d501 <- read.csv("FINAL_CLEANED_DATASET_V2.csv")
+d501
+```
+
+```{r}
+# This forces the install without asking for permission to restart
+install.packages("rlang")
+```
+```{r}
+library(rlang)
+library(DescTools)
+```
+
+```{r}
+#package to winsorize data
+
+# Create Log Volatility (adding a tiny amount if there are zeros, though rare in vol), adds a column to our dataframe called log_vol!
+d501$log_vol <- log(d501$SP.Volatility + 1)
+
+# Winsorize the Log Volatility at 1% and 99% (this is the standard approach!)
+d501$wins_log_vol <- DescTools::Winsorize(d501$log_vol, val = quantile(x = d501$log_vol, probs = c(0.01, 0.99), na.rm = TRUE))
+
+# Winsorize the ESG Momentum! dont need to take the log first for this one, winsorizing at 0.5% and 99.5% to remove truly impossible data points while stil being conservative!
+d501$wins_esg_mom <- DescTools::Winsorize(d501$ESG.Momentum, val = quantile(x= d501$ESG.Momentum, probs = c(0.005, 0.995), na.rm = TRUE))
+
+d501$stand_esg_mom <- scale(d501$wins_esg_mom)
+
+#enviromental pillar
+#winsorize first 
+d501$wins_esg_mom_E <- DescTools::Winsorize(d501$ESG.Mom.Env, val = quantile(x= d501$ESG.Mom.Env, probs = c(0.005, 0.995), na.rm = TRUE))
+
+#then standardize
+d501$stand_esg_mom_E <- scale(d501$wins_esg_mom_E)
+
+#social and governance pillar
+#winsorize first 
+d501$wins_esg_mom_S <- DescTools::Winsorize(d501$ESG.Mom...Social, val = quantile(x= d501$ESG.Mom...Social, probs = c(0.005, 0.995), na.rm = TRUE))
+d501$wins_esg_mom_G <- DescTools::Winsorize(d501$ESG.Mom...Gov, val = quantile(x= d501$ESG.Mom...Gov, probs = c(0.005, 0.995), na.rm = TRUE))
+
+
+#then standardize
+d501$stand_esg_mom_S <- scale(d501$wins_esg_mom_S)
+d501$stand_esg_mom_G <- scale(d501$wins_esg_mom_G)
+```
+
+#to do the quantile regession in R, we need to use the quantreg package
+```{r}
+# Install the package if you haven't already
+#install.packages("quantreg")
+#install.packages("broom")
+#install.packages("gratia")
+
+
+library(quantreg)
+#library(broom)
+#library(dplyr)
+#library(gratia)
+```
+
+```{r}
+#defining the quantiles we want to test
+# 0.10 (Low Volatility), 0.50 (Median Volatility), 0.90 (High Volatility/Panic)
+tau_values <- c(0.10, 0.50, 0.90)
+```
+
+
+#in the original quantile regression we used a fixed effects model, simulating this by adding factor(Security) and factor(Year). testing the coefficent for stand_esg_mom becomes negative at the 90th percentile which would explore the "sheiding effect" hypothesis that we see in Garica-Suaza (we did find an opposite effect in the original analysis)
+
+```{r}
+
+#Use method = "fn" (Frisch-Newton), much faster for large datasets with many variables/dummies.
+rq1_quantile <- rq(wins_log_vol ~ stand_esg_mom + Log.MCap + Book.to.Mkt + 
+                   ROA + Asset.Growth + factor(Year) + factor(Security), 
+                   tau = tau_values, 
+                   data = d501, 
+                   method = "fn") 
+
+rq1_summary <- summary(rq1_quantile, se = "ker") 
+
+cat("Optimized RQ1 Results:\n")
+for(i in 1:length(tau_values)) {
+  res <- rq1_summary[[i]]$coefficients
+  cat("\nQuantile:", tau_values[i], "\n")
+  # Filter for the main variables to keep the output clean
+  print(res[c("stand_esg_mom", "Log.MCap", "Book.to.Mkt", "ROA", "Asset.Growth"), ])
+}
+```
+#Interpreting RQ1 results: in contrast to the shielding effect seen in garica-suaza (2025) we are seeing the opposite of the shielding hypothesis. rather than acting a shield during market panic, it seems ESG momentum in our sample acts as a volatility amplifier at the extremes 
+#we need to interpet the results according to percentile
+#Tenth percentile (0.1). ESG momentum coefficent = -0.0049, p=0.616 (not singificant). In periods of low stock price volatility, ESG momentum has no statistically impact on future volatility. the market is quiet and changes in ESG scores do not move the needle on risk. as we can see, the log mcap (p<0.001) and assest growth (p<0.001) are the significant drivers of volatility here. this is consistent with what we saw in the linear regression for RQ1
+#Normal conditions (median/50th percentile, 0.5). ESG momentum coefficent = 0.0102 (p=0.1274), under normal market conditions (the median), ESG momentum is still not statisically singificant. while the coefficent is now positive, there is not enough evidence to say that ESG momentum consistently impacts volatility for the median firm. as we can see the log mcap is still statistically singificant, indicating that it continues to impact volatility under normal conditions
+#the 90th percent (0.9). ESG momentum = 0.0177 and p = 0.047. This is interesting, during the periods of extreme market volatility (90th percentile), the p-value becomes singificant at (alpha = 0.05). because the dependent variable is log-transformed, this positive coefficent indicates that a one-SD increase in ESG momentum is associated with an approximate 1.77% increase in stock price volatility during market extremes
+#Overall we can conduclude that this data shows that for canadian firms rapid ESG improvements actually introduce more uncertianity during a panic
+
+
+#RQ2: Industry moderation (quantile regression)
+#in the original RQ2 we used random effects, but in quantile regression, standard practice is to use pooled quantile regression with clustered standard errors (or years fixed effects) to evaluate interaction terms across the distribution
+
+```{r}
+rq2_quantile <- rq(wins_log_vol ~ stand_esg_mom * INDUSTRY + Log.MCap + factor(Year), 
+                   tau = tau_values, 
+                   data = d501, 
+                   method = "fn")
+
+rq2_summary <- summary(rq2_quantile, se = "ker")
+
+# Extract and view the interaction terms across quantiles
+cat("Optimized RQ2: Industry Moderation Coefficients across Quantiles:\n")
+for(i in 1:length(tau_values)) {
+  res <- rq2_summary[[i]]$coefficients
+  
+  # Select the relevant rows (main effects and interactions)
+  target_rows <- c("stand_esg_mom", 
+                   "INDUSTRYNatural Resources", 
+                   "INDUSTRYService", 
+                   "stand_esg_mom:INDUSTRYNatural Resources", 
+                   "stand_esg_mom:INDUSTRYService")
+  
+  cat("\nQuantile:", tau_values[i], "\n")
+  # Use intersect to avoid errors if exact naming differs slightly in your R environment
+  print(res[intersect(target_rows, rownames(res)), ])
+}
+```
+#for RQ2 was whether the industry types changes (moderates) the way ESG momentum impacts volatility
+#looking at the interaction terms (stand_esg_mom:INDUSTRYNaturalResources and stand_esg_mom:INDUSTRYService) across all three quantiles (0.1,0.5,0.9) the p-values for all of these interaction terms are well above 0.05. Remember that manufactering does not have its own row bc it is serving as the baseline or reference category in our regression model, just like we did in the original model, manufactering is the dropped category so the other two industries are compared against it, seen in the stand_esg_mom main effect (this effect shows the impact of ESG momentum specifically for manufactering firms). for example at the 90th percentile the coefficent of 0.119 means that for manufactering firms, 1 SD increase in ESG momentum increases volatility by about 11.9%. 
+#For the interaction effects, since they are all non-significant we can conclude that whether a company is in manufactering, natural resources or services, a rapid change in its ESG score will affect its volatility in exactly the same way, the market does not care 
+#looking at the main effects, we see that while the relationship by industry type does not change the "staring lines" are different
+#natural resources are "calmer": for every quantile, the natural respirces industry is massively negative very significant (p<0.001). at the 90th percentile, being in this industry drops base volatility by -0.50 compared to manufactering
+#for the services industry, we see that the coefficent is largely negative and singificant for the 10th and 50th percentiles, but then becomes non-significant in the 90th percentile, so we know the service industry's volatility does not change in extreme periods
+#looking at the base stand_esg_mom variable (represents the baseline manufactering industry). at the 10th and 50th percentiles it is relatively small and insignificant, but at the 90th percentile, it spikes to 0.119 and becomes singificant (p=0.026)
+
+
+
+#RQ3: the original RQ3 looked at individual pillar (E,S and G). 
+
+```{r}
+
+rq3_quantile <- rq(wins_log_vol ~ stand_esg_mom_E + stand_esg_mom_S + stand_esg_mom_G + 
+                   Log.MCap + ROA + Book.to.Mkt + Asset.Growth + 
+                   factor(Year) + factor(Security), 
+                   tau = tau_values, 
+                   data = d501, 
+                   method = "fn")
+
+rq3_summary <- summary(rq3_quantile, se = "ker")
+
+# Extract the pillar coefficients
+cat("Optimized RQ3: ESG Pillar Coefficients across Quantiles:\n")
+for(i in 1:length(tau_values)) {
+  res <- rq3_summary[[i]]$coefficients
+  
+  cat("\nQuantile:", tau_values[i], "\n")
+  print(res[c("stand_esg_mom_E", "stand_esg_mom_S", "stand_esg_mom_G"), ])
+}
+
+```
+#in our original reports findings, we suspected that governance was the primary driver of volatility (we did not see this). the quantile regression tells a different store, social memntum seems to be the sole driver
+#tenth percentile (0.1): E, S and G all have p-values above 0.65, so we can conclude that when the market is calm no specific pillar of ESG momentum creates enough noise to impact price stability.
+#normal conditions (0.5): the social momentum emerges as a highly significant volatility driver (stand_esg_mom_s=0.029,p=0.0003), while E and G remain insignificant. this means that under market conditions, a non-standard deviation jump in a firms social score increases volatility by nearly 3%
+#the 90th volatile percentile: social momentum remains the only singificant driver (stand_esg_mom_S=0.028,p=0.014). again, E and G are still insiginificant (p>0.80). we can conclude that even during severe market distress, sudden shifts in social ESG metrics are actively contributing to market uncertainity
+
