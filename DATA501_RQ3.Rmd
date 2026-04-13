@@ -1,0 +1,276 @@
+---
+title: "DATA_501_RQ3"
+output:
+  html_document:
+    df_print: paged
+date: "2026-03-21"
+---
+
+#------------------------This is our analysis for RQ3--------------------------------------
+
+#loading in the cleaned dataset
+```{r}
+d501 <- read.csv("FINAL_CLEANED_DATASET_V2.csv")
+d501
+```
+
+#adding the transformed variables into our data set!
+```{r}
+#transforming stock price volatility
+d501$log_vol <- log(d501$SP.Volatility + 1)
+d501$wins_log_vol <- DescTools::Winsorize(d501$log_vol, val = quantile(x = d501$log_vol, probs = c(0.01, 0.99), na.rm = TRUE))
+
+#Transforming ESG momentum
+d501$wins_esg_mom <- DescTools::Winsorize(d501$ESG.Momentum, val = quantile(x= d501$ESG.Momentum, probs = c(0.005, 0.995), na.rm = TRUE))
+d501$stand_esg_mom <- scale(d501$wins_esg_mom)
+
+
+#transforming the enviroment pillar 
+#winsorize first then standardize
+d501$wins_esg_mom_E <- DescTools::Winsorize(d501$ESG.Mom.Env, val = quantile(x= d501$ESG.Mom.Env, probs = c(0.005, 0.995), na.rm = TRUE))
+d501$stand_esg_mom_E <- scale(d501$wins_esg_mom)
+
+#transforming the social and governance pillars
+#winsorize first and then standardize
+d501$wins_esg_mom_S <- DescTools::Winsorize(d501$ESG.Mom...Social, val = quantile(x= d501$ESG.Mom...Social, probs = c(0.005, 0.995), na.rm = TRUE))
+d501$wins_esg_mom_G <- DescTools::Winsorize(d501$ESG.Mom...Gov, val = quantile(x= d501$ESG.Mom...Gov, probs = c(0.005, 0.995), na.rm = TRUE))
+
+d501$stand_esg_mom_S <- scale(d501$wins_esg_mom_S)
+d501$stand_esg_mom_G <- scale(d501$wins_esg_mom_G)
+```
+
+
+#now getting into RQ3. interested in seeing which ESG pillar has the greatest impact on mean stock price volatility over ten years
+
+#starting out by checking the correlation matrix between ESG pillar
+```{r}
+# Load necessary libraries
+library(corrplot)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+```
+
+```{r}
+pillar_correlations <- cor(d501[, c("stand_esg_mom_E", "stand_esg_mom_S", "stand_esg_mom_G")], 
+                           use = "complete.obs")
+
+# Print the matrix
+print(pillar_correlations)
+
+# Visualize the correlation matrix
+corrplot(pillar_correlations, method = "color", type = "upper", 
+         addCoef.col = "black", tl.col = "black", 
+         title = "Correlation Matrix of ESG Momentum Pillars",
+         mar = c(0,0,1,0))
+```
+
+#the highest corrleation we see is between the social and the enviroment pillar (r=0.607), potential issue with multicolinearity
+
+#since our data is quarterly, we will look at the correlation between ESG changes today and stock volatility at 1 quarter (3 months) and 4 quarters (12 months in the future). this identifies which pillar has a more sustained impact. our current variable called wins_log_vol effectively captures the long term (12 month) impact. to compare this against a short term (3 month) impact, we can correlate the same ESG momentum scores with the volatility of just immediate next quarter
+```{r}
+# - Volatility today (wins_log_vol) = Impact over the NEXT 12 months.
+# - Volatility in 4 quarters (lead 4) = Impact on the window starting 1 year from now.
+
+library(dplyr)
+
+d501 <- d501 %>%
+  group_by(Security) %>%
+  arrange(Year, Quarter) %>%
+  # Use dplyr::lead to avoid conflicts with other packages
+  mutate(vol_future_1yr = dplyr::lead(wins_log_vol, 4)) %>% 
+  ungroup()
+
+# Create a summary table for the plot
+calc_cor <- function(pillar, vol_var) {
+  cor(d501[[pillar]], d501[[vol_var]], use = "complete.obs")
+}
+
+viz_data <- data.frame(
+  Pillar = rep(c("Environmental", "Social", "Governance"), each = 2),
+  Horizon = rep(c("Immediate (Next 12m)", "Delayed (Year 2)"), 3),
+  Correlation = c(
+    calc_cor("stand_esg_mom_E", "wins_log_vol"), calc_cor("stand_esg_mom_E", "vol_future_1yr"),
+    calc_cor("stand_esg_mom_S", "wins_log_vol"), calc_cor("stand_esg_mom_S", "vol_future_1yr"),
+    calc_cor("stand_esg_mom_G", "wins_log_vol"), calc_cor("stand_esg_mom_G", "vol_future_1yr")
+  )
+)
+
+# Plotting the results
+ggplot(viz_data, aes(x = Pillar, y = Correlation, fill = Horizon)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_minimal() +
+  labs(title = "ESG Pillar Impact: Immediate vs. Delayed Volatility",
+       subtitle = "Correlation between current ESG momentum and future stock risk",
+       y = "Correlation Coefficient (Pearson r)",
+       x = "ESG Pillar") +
+  scale_fill_manual(values = c("#2E86AB", "#A23B72"))
+
+```
+```{r}
+# 2. Select the variables for the matrix
+#includes your 3 pillars and your 2 volatility measures
+corr_subset <- d501 %>%
+  select(
+    `Env Momentum` = stand_esg_mom_E,
+    `Soc Momentum` = stand_esg_mom_S,
+    `Gov Momentum` = stand_esg_mom_G,
+    `Immediate Vol (12m)` = wins_log_vol,
+    `Delayed Vol (Year 2)` = vol_future_1yr
+  )
+
+# 3. Calculate the raw correlation matrix
+raw_corr_values <- cor(corr_subset, use = "complete.obs")
+
+# 4. Print the raw values to the console
+print(round(raw_corr_values, 4))
+```
+
+#All correlations between ESG Momentum and Volatility are positive, but the magnitudes are very small (all are less than 0.06).
+#Environmental Momentum (0.0505): Of the three pillars, Environmental Momentum has the strongest immediate association with volatility. This aligns with the earlier regression results: as firms make big environmental shifts, the market reacts with higher price swings.
+
+#Governance Momentum (0.0059): This has almost zero relationship with immediate volatility.its correlation with Delayed Volatility (0.0235) is actually higher than its immediate effect. This suggests that Governance changes might take longer for the market to price in or react to.
+
+#The "Decay" Effect: For Environmental and Social momentum, the correlation with volatility weakens as you move from Year 1 (Immediate) to Year 2 (Delayed). This implies that the "shock" of ESG changes hits the stock price volatility relatively quickly and then begins to stabilize.
+#The correlation between Immediate Vol and Delayed Vol is very high (0.7783).Interpretation: High volatility today is a very strong predictor of high volatility next year. This is a standard finding in finance (known as volatility clustering).
+
+#in our proposal we state that we want to run a block-panel regression to isolate the incremental value of each ESG pillar. sadly, in our prelimariy EDA we are seeing that we are at risk of multicollinarity between E and S. the true gold standard to check this is by looking at the VIF scores for these pillars which we will be doing shortly. 
+#a couple other things I think we should check for: Hausman test (we said in our proposal we should use a random effects model), and panel data is notirous for clustering (voltatility today is related to volatility yesterday) so we should check for serial correlation and heterosecadscity. 
+
+
+```{r}
+library(plm)
+library(car)
+library(lmtest)
+
+# 1. Setup Panel Data -> our data is already set up in "long format", which is the standard structure for panel/longtudinal data. in this format, each firm has multiple rows one for each year and quarter. this is exactly what you need for our block wise panel, but if we want to use the library plm, the package does not know which column is the company and which is in the time
+pdata <- pdata.frame(d501, index = c("Security", "Index"))
+
+# 2. Hausman Test (FE vs RE)
+# Model with all pillars and controls
+fe_model <- plm(wins_log_vol ~ stand_esg_mom_E + stand_esg_mom_S + stand_esg_mom_G + 
+                Log.MCap + ROA + Asset.Growth, data = pdata, model = "within")
+re_model <- plm(wins_log_vol ~ stand_esg_mom_E + stand_esg_mom_S + stand_esg_mom_G + 
+                Log.MCap + ROA + Asset.Growth, data = pdata, model = "random")
+
+hausman_result <- phtest(fe_model, re_model)
+print(hausman_result) # If p < 0.05, use Fixed Effects
+
+# 3. Multicollinearity (VIF)
+# Note: VIF is calculated on a standard OLS version of your full model
+vif_model <- lm(wins_log_vol ~ stand_esg_mom_E + stand_esg_mom_S + stand_esg_mom_G + 
+                Log.MCap + ROA + Asset.Growth + Sector, data = d501)
+print(vif(vif_model))
+
+# 4. Serial Correlation Test
+pbgtest(fe_model) # Wooldridge test for serial correlation in panels
+```
+#hausman test tells us that the we have a signficant p-value so we need to use fixed effects. In a Random Effects model, those unobserved traits are "bleeding" into your ESG coefficients, biasing your results.A FE model "subtracts" these company-specific traits, looking only at how changes in ESG Momentum within a single company lead to changes in that specific company's volatility.
+#ISSUE: since a company's Sector usually never changes, the Fixed Effects model cannot estimate a coefficient for it (it gets "absorbed" into the company-specific intercept).However, model is now much more robust against Omitted Variable Bias. we are no longer comparing "volatile energy firms" to "stable tech firms"; comparing "Company A's volatile period" to "Company A's stable period."
+
+#VIF: most notable, we see that the stand_esg_mom_E has the highest GVIF at 4.30. Usually a generalized VIF below 5 and sometimes below 10 is acceptable. Even though our earlier correlation check showed a high 0.80 relationship between Environment and Social pillars, the GVIF shows that the multicollinearity is not severe enough to ruin the model. Our coefficients for E, S, and G should remain stable and interpretable in the block-wise regression. yay!!!!
+
+#looking at the serial correlation test, our p-value is highly singificant. this means we have strong evidence of serial correlation in our errors. this means that for a single company, the error or noise in one quarter is highly related to the error in the previous quarter. We saw a very similar issue in RQ1 means we need to use the cluster-robust standard error and clustering by our security variable. 
+
+#analysis for RQ3 (general question)
+```{r}
+library(sandwich)
+
+# 1. Run the Fixed Effects Model (as suggested by Hausman)
+final_model_fe <- plm(wins_log_vol ~ stand_esg_mom_E + stand_esg_mom_S + stand_esg_mom_G + 
+                        Log.MCap + ROA + Book.to.Mkt + Asset.Growth, 
+                      data = pdata, 
+                      model = "within") # "within" = Fixed Effects
+
+# 2. Apply Clustered Robust Standard Errors
+summary(final_model_fe, vcov = function(x) vcovHC(x, method = "arellano", cluster = "group"))
+```
+#interpreting our results: 
+#The most critical takeaway from the final model is that none of the three ESG pillars are statistically significant at the standard 5% level. 
+#While we originally sought to find which pillar has the "greatest impact," these results suggest that for this sample of Canadian stocks, no single ESG pillar acts as a primary driver of stock price volatility once you strictly account for firm-level fixed effects and traditional financial metrics.
+#Even though the results are not statistically significant, we can look at the Coefficients (Estimate) to understand the "direction" and "relative weight" of each pillar in the model:
+#Environmental Momentum (0.0135): This pillar has the largest coefficient, followed very closely by Social Momentum (0.0125). Both are roughly 10 times larger than the estimate for Governance (0.0013), which appears to have almost zero impact in this specific window.
+#Directionality: All three coefficients are positive. This indicates that, directionally, an increase in ESG momentum is associated with a slight increase in future volatility. This aligns with the "market shock" theory, where major ESG shifts introduce uncertainty or transition risk rather than immediate stability.The "Financial Baseline" DominanceThe model clearly shows that traditional financial metrics remain the dominant predictors of volatility, far outweighing any ESG signals
+#Log.MCap (0.2079, p < 0.001): This is the strongest and most significant predictor. Interestingly, it is positive, suggesting that larger companies in this Canadian sample experienced higher log-volatility during this period.
+#Book to Mkt (0.0464, p = 0.014): Highly significant. This indicates that "value" firms (high BTM) or those with potential market distress are significantly more volatile than "growth" firms.
+#ROA (-0.0015, p = 0.067) & Asset Growth (0.0363, p = 0.091): Both are marginally significant at the 10% level. As expected, higher profitability (ROA) acts as a "stabilizing" factor (negative coefficient), while rapid expansion (Asset Growth) is associated with higher risk.
+#VEarlier, we identified a 0.589 correlation between the Environmental and Social pillars. In a regression setting, this high correlation leads to "variance inflation."Because E and S momentum often move together in Canadian firms, the model struggles to isolate the unique contribution of each.The Environmental pillar had the highest raw correlation with volatility (r = 0.0505), but in the full model, its significance is "soaked up" by the shared variance with the Social pillar and the firm-specific fixed effects.
+#The "within" R-squared is 0.0374 (3.7%), but the Adjusted R-Squared is negative (-0.003). This is a strong statistical signal: it means that once you know which company you are looking at, adding ESG Momentum and these financial controls provides almost no additional predictive power
+
+
+
+#SUB-QUESTION ANALYSIS:
+
+#sub question 3: More specifically, is there a difference between what pillars predict Long Term volatility vs. Short Term volatility over ten years?
+#alternative way to look at short term and long term volatility -> need to compare two different "time horizons." We use the 1-year lead to represent Short-Term impact and the 2-year lead to represent Long-Term impact.
+
+#Short-Term (1 Year): Does an ESG shock today cause an immediate market reaction?
+
+#Long-Term (2 Years): Does the ESG improvement eventually lead to "lower risk" once the changes are fully implemented?
+
+#run a regression with both of these and compare them!!
+#If the coefficients for E, S, and G are significant in the 1-year model but vanish in the 2-year model: ESG momentum is a short-term market "signal" that does not fundamentally alter the long-term risk profile of Canadian firms.
+
+```{r}
+library(dplyr)
+library(plm)
+library(sandwich)
+library(lmtest)
+
+# We use 4 quarters for Short-Term (1yr) and 8 quarters for Long-Term (2yr)
+d501 <- d501 %>%
+  group_by(Security) %>%
+  arrange(Year, Quarter) %>%
+  mutate(
+    vol_ST = dplyr::lead(wins_log_vol, 4), # Short-Term (1 Year ahead)
+    vol_LT = dplyr::lead(wins_log_vol, 8)  # Long-Term (2 Years ahead)
+  ) %>%
+  ungroup()
+
+# Create the Panel Data object (slightly different way of setting up our panel but the same idea!)
+pdata <- pdata.frame(d501, index = c("Security", "Index"))
+
+# Short-Term Model
+model_ST <- plm(vol_ST ~ stand_esg_mom_E + stand_esg_mom_S + stand_esg_mom_G + 
+                Log.MCap + ROA + Book.to.Mkt + Asset.Growth, 
+                data = pdata, model = "within")
+
+# Long-Term Model    
+model_LT <- plm(vol_LT ~ stand_esg_mom_E + stand_esg_mom_S + stand_esg_mom_G + 
+                Log.MCap + ROA + Book.to.Mkt + Asset.Growth, 
+                data = pdata, model = "within")
+
+   
+# Short Term Results
+summary(model_ST, vcov = function(x) vcovHC(x, method = "arellano", cluster = "group"))
+
+# Long Term Results
+summary(model_LT, vcov = function(x) vcovHC(x, method = "arellano", cluster = "group"))
+```
+#data identifies a clear "winner" among the three pillars:Governance Momentum (G) is the only significant ESG predictor. With a coefficient of 0.0286 (p = 0.024), it is statistically significant at the 5% level.Relative Weight: The impact of Governance momentum in the short term is more than twice as large as Environmental (0.013) and Social (-0.012) momentum.For Canadian firms, changes in governance (board structure, executive pay, ethics) create a statistically detectable "shock" to stock volatility within the first year.2. Short-Term vs. Long-Term Dynamics (SRQ3 Part B)The most striking finding is the disappearance of the ESG effect as you move further out in time. In the 1-year model, Governance is significant (p = 0.024). In the 2-year model, the coefficient drops from 0.0286 to 0.0174 and the p-value rises to 0.155 (non-significant).
+#Neither Environmental nor Social momentum reaches significance in either timeframe. Interestingly, Social momentum even flips direction (from negative to positive), confirming it is purely statistical noise in this dataset.Finding: There is a massive difference between horizons. ESG momentum acts as a short-term uncertainty shock that the market fully "digests" or ignores by the second year.
+#Financial Control PerformanceWhile the ESG pillars fade, the "Financial Baseline" remains robust, telling us what really drives volatility over 10 years. Log.MCap (Size): Remains the strongest, most consistent predictor in both models (p < 0.001). Larger firms consistently show higher log-volatility in this period.Book.to.Mkt (Value): Very significant in the short term (p < 0.001) but its effect vanishes by Year 2. This suggests that "Value" distress is a near-term risk factor.ROA (Profitability): Interestingly, ROA becomes more significant in the long term (p = 0.019) than the short term. This suggests that while ESG is a "quick shock," actual company profitability is what determines long-term stability.
+
+#Overall, the analysis reveals that Governance Momentum is the only pillar with a statistically significant impact on stock price volatility. However, this impact is strictly limited to the short term (1-year horizon). Within 12 months of a governance change, firms experience a significant increase in volatility (p = 0.024), but this effect dissipates and becomes non-significant by the 24-month mark ($p = 0.155$). Neither Environmental nor Social momentum demonstrated a significant impact at either timeframe. This suggests that for Canadian investors, ESG momentum represents a transitory 'information shock' rather than a fundamental shift in long-term risk profiles, which remain primarily driven by company size and profitability."
+
+
+#NOT a distributed lag model as we originally proposed: 
+#a Fixed Effects Panel Data Analysis with a Lead-Lag Specification.Our specific implementation is a Within-Group Estimator with Clustered Robust Standard Errors.
+#This refers to the structure of our dataset. Because we are tracking the same entities (235+ Canadian companies) over multiple time periods (up to 40 quarters), we are performing panel data (or longitudinal) analysis. This is more powerful than a simple cross-sectional study because it allows you to see how changes in ESG within a company affect its own future risk.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
