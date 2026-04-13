@@ -1,0 +1,310 @@
+---
+title: "DATA501_RQ2"
+output:
+  html_document:
+    df_print: paged
+  html_notebook: default
+  pdf_document: default
+date: "2026-03-14"
+---
+#----------------------This file contains all the code we used to analyze RQ2-----------------------------------
+
+#Start by loading in our data frame
+```{r}
+getwd()
+
+d501 <- read.csv("FINAL_CLEANED_DATASET_V2.csv")
+d501
+```
+
+#here is the code seen in the RMD file for RQ1 to transform our key variables in case you need to run this again
+
+```{r}
+#install.packages("DescTools")
+library(DescTools) #library used to winsorize
+
+
+# Creates the transformed SP Volatility variable
+d501$log_vol <- log(d501$SP.Volatility + 1)
+
+# Winsorize the Log Volatility at 1% and 99% 
+d501$wins_log_vol <- DescTools::Winsorize(d501$log_vol, val = quantile(x = d501$log_vol, probs = c(0.01, 0.99), na.rm = TRUE))
+
+# Winsorize the ESG Momentum!
+d501$wins_esg_mom <- DescTools::Winsorize(d501$ESG.Momentum, val = quantile(x= d501$ESG.Momentum, probs = c(0.005, 0.995), na.rm = TRUE))
+
+#standardized ESG momentum
+d501$stand_esg_mom <- scale(d501$wins_esg_mom)
+d501_clean$stand_esg_mom <- scale(d501$wins_esg_mom)
+```
+
+
+#Now getting into RQ2, need to verify that industry type and size are distincit enough categories with enough data points to support moderated regression
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(car) # for Levene's test
+```
+
+
+```{r}
+industry_stats <- d501 %>%
+  group_by(INDUSTRY) %>%
+  summarise(
+    Count = n(),
+    Mean_Volatility = mean(wins_log_vol, na.rm = TRUE),
+    Var_Volatility = var(wins_log_vol, na.rm = TRUE),
+    SD_Volatility = sd(wins_log_vol, na.rm = TRUE)
+  )
+
+print("Summary Statistics for Volatility by Industry:")
+print(industry_stats)
+```
+#for a moderated regression or an ANOVA we need a large enough sample -> the count column shows that all three industries have substantial data points ranging from 1674 to 3929. this confirms our categories are distinct enough!
+#industry specific volatility -> manufactering (1.46) has the highest average volatility, service (1.30), natural resources (0.94). this means industry is probably a meaningful sperator. If all means were identical, the industry category might not be a useful moderator for our study
+#looking at the variance of the volatility for each industry, the services industry has the highest variance compared to the other industries. the spread of the volatility is wider for the industry industry -> we may have unequal variances, issue for a moderated regression. will need to run additional tests to explore this
+#looking at the SD, we are looking to see how much individual companies deviate from the industry average. SD varies between these groups, suggests that the relationship between ESG and Volatility likely functions differently within each group. This justifies the "Moderated" part of our regression
+
+
+#need to check for hetereoscedascity -> assumption for a regression is that the variances are equal! doing this with levenes test
+```{r}
+# Formal test for Heteroscedasticity (Levene's Test)
+# H0: Variances are equal across groups
+levene_test <- leveneTest(wins_log_vol ~ INDUSTRY, data = d501)
+print(levene_test)
+```
+#failed levenes test, variances are NOT equal, issue for our analysis, heteroscedacity is present. cannot use a regular OLS regression. If we want to run an ANOVA at some point we will need to use Welch's ANOVA bc it handles groups with unequal variances. For the regression, we will need to use the Robust Standard Error, this fixes the p-values so that heteroscedascity doesn't lead to false-positive results (Type 1 error). this standard error looks at the shape of our data's uneveness and creates a custom correction for the variance, does not change the coefficents it only recalucates the Standard Errors to be Robust (unaffected by the even spread). will do this once we run the regression
+
+
+#plotting the market cap on a log scale to ensure that there is a balanced spread of large and small companies within each Candian industry. We will also be creating scatterplots to look at the raw correlation between ESG volatility for each industry seperatly to see if the slopes look different before running the formal interaction model
+
+```{r}
+# Plotting Log MCap to ensure balanced spread of small vs large companies
+ggplot(d501, aes(x = INDUSTRY, y = Log.MCap, fill = INDUSTRY)) +
+  geom_boxplot(alpha = 0.7) +
+  geom_jitter(width = 0.2, alpha = 0.1) +
+  labs(
+    title = "Distribution of Market Cap (Log Scale) by Industry",
+    subtitle = "Verifying balanced spread of small vs large companies",
+    x = "Industry Type",
+    y = "Log Market Cap"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+#visual check for multicolinarity and data distribution. Our data points are widley distributed roughly 17.5 and 27.5. good news. It confirms that our dataset isn't just full of "Mid-Cap" companies, a healthy representation of "Small-Cap" (left side) and "Large-Cap" (right side) firms. Because we have a dense "cloud" of data across the whole axis, a moderated regression will have enough power to tell us if the ESG-Volatility relationship changes as a company grows. Overall, this plot validates that Log MCap is a robust control variable and it shows that while size influences ESG scores, it doesn't swallow the ESG variable entirely leaving plenty of room to measure how industry type moderates this relationship
+#note that we see outliers in service and manufactering, this represents the periods or comapnies with extreme volatility, another reason why we need to use a robust error correction when running the regression to "weight" the influences of these outliers so they don't break our model
+
+
+```{r}
+# Visualizing slopes for each industry before formal interaction modeling
+ggplot(d501, aes(x = stand_esg_mom, y = wins_log_vol, color = INDUSTRY)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "lm", se = TRUE) + # Linear regression slopes
+  facet_wrap(~INDUSTRY) +
+  labs(
+    title = "ESG Combined Score vs Volatility by Industry",
+    subtitle = "Comparing slopes to verify industry as a moderator",
+    x = "ESG Combined Score",
+    y = "Stock Price Volatility"
+  ) +
+  theme_minimal()
+```
+#the plot above confirms the uneven variances that we idebtified earlier using Levene's test. While our previous scatterplot showed the relationship between size and ESG, this plot specifically looks at the distribution of volatility across the three industry groups.Natural Resources has a much lower median volatility (the thick line inside the box) and a "tighter" distribution.Manufacturing and Service have much higher medians.This confirms that "Industry" is a powerful categorical variable. If the boxes were all at the same level, Industry wouldn't be a useful moderator for stock volatility.
+
+
+#since we observed outliers, I am going to check the skew of SP volatility (transformed). taking the log and winsorizing should have taken care of this but we should still make sure:
+
+```{r}
+install.packages("moments")
+library(moments)
+```
+
+
+```{r}
+# Calculate skewness for Volatility (in the transformed variable)
+# Note: na.rm = TRUE is vital if you have missing data
+skew_val <- skewness(d501$wins_log_vol, na.rm = TRUE)
+print(skew_val)
+
+#checking skewness for our original SP volatility variable for comparison
+skew_val_1 <- skewness(d501$SP.Volatility, na.rm = TRUE)
+print(skew_val_1)
+```
+#anything larger than >1.0 means a large skew, so our data is technically skewed but this is right at the threshold. Our volatility variable still probably has a long tail of a few companies but our data is a lot more concentrated now compared to the original skew of 15.62, massive difference!!
+
+#we have 2,002 rows of missing ESG momentum values, even tho we kept the companies that had at least 4 observations in our time period. When we run a regression, R will automatically delete these 2,002 rows (Listwise deletion), but if these missing scores are mostly from small companies then our analysis will only represent large comapnies and our size moderator will be biased. To check for this, I will compare the log MCap of companies with ESG scores vs those without. if these are significantly different -> discuss survivorship bias in our paper.
+```{r}
+#Check for Attrition Bias (Are missing ESG scores tied to company size?)
+d501$has_esg <- ifelse(is.na(d501$stand_esg_mom), "Missing", "Present")
+t.test(Log.MCap ~ has_esg, data = d501) 
+# If p < .05, your missing data is NOT random, it's tied to size.
+```
+#our data does suffer from selection bias, significant p-value. The companies that have ESG data re significantly larger than the companies that are missing it.comparing the mean ESG momentum score of companies with missing data (20.136) and no missing data (21.77). this has some implications to our analysis. Since our Moderated Regression for RQ2 relies on having ESG Momentum scores, the 2,002 rows that are "Missing" will be automatically dropped from your model:
+
+
+#When we run our analysis, we need to include the fact that these findings will only be generalizable to large-mid sized companies. We just need to acknowledge this, doesn't make our analysis plan weak or incorrect!
+
+
+#next we need to check for multicolinarity for our predictors (EsG momentum, Log MCap and Industry). we dont want to see any VIF values above 5. also making a correlation matrix to see if any two variables are too similar
+
+```{r}
+library(car)      
+library(dplyr)   
+
+#Prepare the data for the check
+# We only check the independent variables (IVs) and the moderator
+# We include the dummy variables for Industry
+check_data <- d501 %>%
+  select(stand_esg_mom, Log.MCap, INDUSTRY) %>%
+  filter(complete.cases(.)) # VIF requires no missing values
+
+#create Industry Dummies manually for the test
+#leave one out (e.g., Service) to avoid the "Dummy Variable Trap"
+check_data$is_Manufacturing <- ifelse(check_data$INDUSTRY == "Manufacturing", 1, 0)
+check_data$is_NaturalResources <- ifelse(check_data$INDUSTRY == "Natural Resources", 1, 0)
+
+#Correlation Matrix
+# We look at the numeric predictors
+cor_matrix <- cor(check_data %>% select(-INDUSTRY))
+print("Correlation Matrix:")
+print(round(cor_matrix, 3))
+
+# Variance Inflation Factor (VIF)
+# run a "fake" linear model just to extract the VIF scores
+vif_model <- lm(stand_esg_mom ~ Log.MCap + is_Manufacturing + is_NaturalResources, data = check_data)
+vif_results <- vif(vif_model)
+
+print("Variance Inflation Factors (VIF):")
+print(vif_results)
+```
+#no issues with VIF do not need to worry about multicolinarity. Correlations > 0.7 or 0.8 suggest potential issues -> no issues! none of our predictors are singificantly correlated with each other which is good
+
+#need to check for the "year effect", maybe used Year as a fixed effect since ESG momentum jumps up a bit in 2019-2020 would tell our model to ignore this extra noise
+#Hausman test (Random effects vs fixed effects): FE only looks at how a single comapny's volatility chnges when its own ESG score changes. Random effect compares Company A to Company B. If this test is significant, this means our random effects is biased and we need to use the FE model, and this would not be good bc a standard FE model would "drop" industry bc it is time invariant.
+#to check for this, we wil need to run our analysis and then compare it to a fixed effects model and then run a hausman test
+
+```{r}
+#install.packages("plm")
+library(plm)
+library(lmtest)
+library(sandwich)
+
+# 1. Run the Random Effects Model (Your Proposal + Year Controls)
+model_re <- plm(wins_log_vol ~ stand_esg_mom * INDUSTRY + Log.MCap + as.factor(Year), 
+                data = d501, 
+                index = c("Security", "Index"), #including index keeps all of our quarterly data points instead of just Year
+                model = "random")
+
+# 2. Run the Fixed Effects Model (To compare with Random effects in the Hausman test)
+model_fe <- plm(wins_log_vol ~ stand_esg_mom + Log.MCap + as.factor(Year), 
+                data = d501, 
+                index = c("Security", "Index"), 
+                model = "within")
+
+# 3. THE HAUSMAN TEST
+hausman <- phtest(model_fe, model_re)
+print(hausman)
+#if hausman is p > 0.05 use the random effects)
+```
+
+#The Hausman test shows that we CAN use random effects like we discussed in the proposal
+
+#viewing our results with a Robust Standard error!!!
+
+```{r}
+final_results <- coeftest(model_re, vcov = vcovHC(model_re, type = "HC3", method = "arellano"))
+  print("Using Random Effects (Hausman non-significant)")
+  print(final_results)
+```
+
+#The core of RQ2: whether the industry type moderates the ESG-Volatility relationship, need to look at the interaction terms at the bottom (last two rows). Niether are statistically singificant. We can conclude that Industry type does NOT significantly moderate the relationship between ESG momentum nd stock price volatility. The slope or impact of ESG momentum on risk is statistically the same whether a company is in manufactering, Service or Natural resources!
+
+#even though the moderation analysis was not significant, some of the main efects are singificant. the baseline industry in our analysis is manufactering, so the stand_esg_mom coffiecnet (-0.009) is not sig, means within the manufactering sextor, ESG momentum alone didnt have a direct impact on volatility in this model
+#looking at the INDUSTRYNatural Resources line, it has a coefficent of -0.438 and a signficiant p-value )<0.001. this means that regardless of ESG scores, natural resources in our dataset have a signficiantly lower baseline volatility than manufactering companies 
+#services industry has a coefficent -0.203 (p=0.056) is marginally singificant suggesting service firms also tend to have lower volatility than the manufactering baseline.
+#Company Size (Log.MCap): The coefficient is 0.177 (p < 0.001). This is highly significant. Interestingly, in our model, as company size increases, volatility also increases. This might be due to the specific types of large-cap firms in the Canadian market or how the Log Volatility transformation interacted with the data. weird
+
+#The coefficients for 2019 (0.367), 2020 (0.305), and 2021 (0.258) are all positive and highly significant. the model successfully captured the massive market instability caused by the COVID-19 pandemic. By including these as "Fixed Effects," we ensured that the "global noise" of those years didn't ruin your ability to see the specific ESG effects.
+
+#creating the interaction plot for RQ2
+
+```{r}
+# Load necessary libraries
+
+library(ggeffects)
+library(ggplot2)
+library(plm)
+
+# 1. Create a "clean" version of your data with no NAs in the model variables
+# This ensures the dataframe matches the model's internal dimensions
+d501_clean <- d501[complete.cases(d501[, c("wins_log_vol", "stand_esg_mom", "INDUSTRY", "Log.MCap", "Year")]), ]
+
+# 2. Re-run the model using the clean data
+model_re_1 <- plm(wins_log_vol ~ stand_esg_mom * INDUSTRY + Log.MCap + as.factor(Year), 
+                data = d501_clean, 
+                index = c("Security", "Index"), 
+                model = "random")
+
+# 3. Now coeftest will have matching row counts
+final_results <- coeftest(model_re_1, vcov = vcovHC(model_re, type = "HC3", method = "arellano"))
+
+print(final_results)
+```
+```{r}
+nrow(model_re$model) # This should be 6728
+nrow(d501_clean)     # This should now also be 6728
+```
+```{r}
+library(ggplot2)
+
+# 1. Extract the coefficients from your coeftest object
+cf <- coef(final_results)
+
+# 2. Define a range for ESG Momentum (X-axis)
+x_range <- seq(-2, 2, length.out = 100)
+
+# 3. Manually build the predicted lines for each industry
+# We hold Log.MCap at its mean and set Year to a baseline (e.g., 2015)
+mcap_mean <- mean(d501_clean$Log.MCap, na.rm = TRUE)
+
+# Calculate Y for each Industry
+# Formula: Intercept + (Slope_Main * X) + (Industry_Offset) + (Interaction_Offset * X) + (Control * Mean)
+plot_df <- data.frame(
+  stand_esg_mom = rep(x_range, 3),
+  INDUSTRY = rep(c("Manufacturing", "Natural Resources", "Service"), each = 100)
+)
+
+plot_df$predicted_vol <- ifelse(plot_df$INDUSTRY == "Manufacturing",
+  cf["(Intercept)"] + (cf["stand_esg_mom"] * plot_df$stand_esg_mom) + (cf["Log.MCap"] * mcap_mean),
+  ifelse(plot_df$INDUSTRY == "Natural Resources",
+    cf["(Intercept)"] + cf["INDUSTRYNatural Resources"] + 
+    ((cf["stand_esg_mom"] + cf["stand_esg_mom:INDUSTRYNatural Resources"]) * plot_df$stand_esg_mom) + 
+    (cf["Log.MCap"] * mcap_mean),
+    # Service
+    cf["(Intercept)"] + cf["INDUSTRYService"] + 
+    ((cf["stand_esg_mom"] + cf["stand_esg_mom:INDUSTRYService"]) * plot_df$stand_esg_mom) + 
+    (cf["Log.MCap"] * mcap_mean)
+  )
+)
+
+# 4. Create the Plot
+ggplot(plot_df, aes(x = stand_esg_mom, y = predicted_vol, color = INDUSTRY)) +
+  geom_line(linewidth = 1.2) +
+  labs(
+    title = "Interaction of ESG Momentum and Industry (Random Effects)",
+    subtitle = "Lines are nearly parallel, confirming non-significant interaction",
+    x = "Standardized ESG Momentum",
+    y = "Predicted Log Volatility",
+    color = "Sector"
+  ) +
+  theme_minimal() +
+  scale_color_manual(values = c("#CC0000", "#FFCC00", "#555555"))
+```
+```{r}
+# Check the industries present in the data the model actually used
+used_data <- model_re$model
+table(used_data$INDUSTRY)
+```
+
