@@ -461,6 +461,36 @@ bptest(model_ols)
 ```
 # We did expect to fail this test, and we did with a significant p-value. Again, this is expected in panel data, so we do have heteroscedasticity. This is very common for stock market data, which means the "size" of our errors changes depending on the firm's size, ESG score or volatility. This means our standard errors are biased. SOLUTION: We use the clustered standard errors (which we are already doing with the feols function and cluster = ~Security). This fixes the p-value of our coefficients.
 
+#running Hausman's test to be sure that the fixed effects we used originally still work:
+
+```{r}
+# Install and load plm if not already present
+# install.packages("plm")
+library(plm)
+
+# 1. Estimate the Fixed Effects (Within) Model
+fe_model <- plm(wins_log_vol ~ stand_esg_mom + Log.MCap + Book.to.Mkt + 
+                ROA + Asset.Growth, 
+                data = d501, 
+                index = c("Security", "Year"), 
+                model = "within")
+
+# 2. Estimate the Random Effects Model
+re_model <- plm(wins_log_vol ~ stand_esg_mom + Log.MCap + Book.to.Mkt + 
+                ROA + Asset.Growth, 
+                data = d501, 
+                index = c("Security", "Year"), 
+                model = "random")
+
+# 3. Run the Hausman Test
+hausman_result <- phtest(fe_model, re_model)
+
+# 4. View results
+print(hausman_result)
+```
+
+#p-value < 0.05 = reject the null hypothesis and we can use fixed effect! In line with the original analysis
+
 
 #Below would be our regression model for RQ1!!
 #IV: stand_esg_mom (looks at the current quarter, t)
