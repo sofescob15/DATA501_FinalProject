@@ -18,10 +18,8 @@ d501
 library(ggplot2)
 ```
 
-
-#histogram for the aggregate ESG score!
-```{r}
 # Histogram for ESG Combined Score
+```{r}
 ggplot(d501, aes(x = ESGCombinedScore)) +
   geom_histogram(fill = "skyblue", color = "white", bins = 30, na.rm = TRUE) +
   labs(title = "Distribution of ESG Combined Score",
@@ -30,9 +28,9 @@ ggplot(d501, aes(x = ESGCombinedScore)) +
   theme_minimal()
 ```
 
-
-#Inital Histograms for SP Volatility and ESG Momentum (before transformation)
+# Initial Histograms for SP Volatility and ESG Momentum (before transformation)
 ```{r}
+# Stock Price Volatility
 ggplot(d501, aes(x = `SP.Volatility`)) +
   geom_histogram(fill = "salmon", color = "white", binwidth = 0.2, na.rm = TRUE) +
   coord_cartesian(xlim = c(0, 10)) + 
@@ -51,9 +49,9 @@ ggplot(d501, aes(x = ESG.Momentum)) +
   theme_minimal()
 ```
 
-#Inital histograms for ESG momentum pillars (before transformation)!
+# Initial histograms for ESG momentum pillars (before transformation)!
 ```{r}
-
+# Histogram for Environmental Momentum
 ggplot(d501, aes(x = ESG.Mom.Env)) +
   geom_histogram(fill = "lightgreen", color = "white", bins = 30, na.rm = TRUE) +
   labs(title = "Distribution of ESG Momentum - Enviroment",
@@ -63,6 +61,7 @@ ggplot(d501, aes(x = ESG.Mom.Env)) +
 ```
 
 ```{r}
+# Histogram for Social Momentum
 ggplot(d501, aes(x = ESG.Mom...Social)) +
   geom_histogram(fill = "limegreen", color = "white", bins = 30, SSna.rm = TRUE) +
   labs(title = "Distribution of ESG Momentum- Social",
@@ -72,6 +71,7 @@ ggplot(d501, aes(x = ESG.Mom...Social)) +
 ```
 
 ```{r}
+# Histogram for Governance Momentum
 ggplot(d501, aes(x = ESG.Mom...Gov)) +
   geom_histogram(fill = "green", color = "white", bins = 30, na.rm = TRUE) +
   labs(title = "Distribution of ESG Momentum- Governance",
@@ -79,8 +79,9 @@ ggplot(d501, aes(x = ESG.Mom...Gov)) +
        y = "Frequency") +
   theme_minimal()
 ```
-#QQplot for ESG Momentum and SP volatility before transformation
+# Initial QQplots for ESG Momentum and SP volatility (before transformation)
 ```{r}
+# QQplot for ESG Momentum
 ggplot(d501, aes(sample = ESG.Momentum)) +
   stat_qq(na.rm = TRUE) +
   stat_qq_line(color = "red", na.rm = TRUE) +
@@ -101,6 +102,7 @@ ggplot(vol_filtered, aes(sample = `SP.Volatility`)) +
 
 #QQplot for ESG pillars before transformation
 ```{r}
+# QQplot for Environmental Momentum
 ggplot(d501, aes(sample = `ESG.Mom.Env`)) +
   stat_qq(na.rm = TRUE, color = "darkgreen") +
   stat_qq_line(color = "red", na.rm = TRUE) +
@@ -110,6 +112,7 @@ ggplot(d501, aes(sample = `ESG.Mom.Env`)) +
        y = "Sample Quantiles") +
   theme_minimal()
 
+# QQplot for Governance Momentum
 ggplot(d501, aes(sample = `ESG.Mom...Gov`)) +
   stat_qq(na.rm = TRUE, color = "darkblue") +
   stat_qq_line(color = "red", na.rm = TRUE) +
@@ -119,6 +122,7 @@ ggplot(d501, aes(sample = `ESG.Mom...Gov`)) +
        y = "Sample Quantiles") +
   theme_minimal()
 
+# QQplot for Social Momentum
 ggplot(d501, aes(sample = `ESG.Mom...Social`)) +
   stat_qq(na.rm = TRUE, color = "darkorange") +
   stat_qq_line(color = "red", na.rm = TRUE) +
@@ -129,7 +133,7 @@ ggplot(d501, aes(sample = `ESG.Mom...Social`)) +
   theme_minimal()
 ```
 
-#The following plot looks at the relationship of ESG momentum and SP volatility before transformation
+#The following plot looks at the relationship between ESG momentum and SP volatility before transformation
 ```{r}
 ggplot(d501, aes(x = `ESG.Momentum`, y = `SP.Volatility`)) +
   geom_point(alpha = 0.4, color = "steelblue") +
@@ -140,59 +144,59 @@ ggplot(d501, aes(x = `ESG.Momentum`, y = `SP.Volatility`)) +
        y = "SP Volatility") +
   theme_minimal()
 ```
-#red line here represents the relationship between SP volatility and ESG momentum,the fact that it is flat is very bad!
-#our data shows a non-normal pattern, dots curve upwards away from the red line, means we have extreme positives (fat right tails, we expected this)
-#The plot above is the last thing I included in the shared doc!! Everything after this needs to be written about in our proposal!
+# The red line here represents the relationship between SP volatility and ESG momentum, the fact that it is flat is bad!
+# Our data shows a non-normal pattern, dots curve upwards away from the red line, which means we have extreme positives (fat right tails, we expected this)
 
-#running aderson darling test for normality!
+#running Anderson-Darling test for normality!
 ```{r}
 library(nortest)
 ad.test(d501$SP.Volatility)
 ```
 #p-value is much larger than 0.05, need to reject the null -> not normally distributed! Big reason why we need to transform the data
 
-#WINSORIZING THE DATA
-#benefits of this: manage outliers by replacing extreme values with the next nearest values within a specific percentile range (e.g., capping the top and bottom 1% or 5% of data points). Unlike removing outliers (trimming), Winsorization keeps the total number of observations, which preserves statistical power and ensures the sample size remains constant
+### Variable Transformation
+# WINSORIZING THE DATA
+# benefits of this: manage outliers by replacing extreme values with the next nearest values within a specific percentile range (e.g., capping the top and bottom 1% or 5% of data points). Unlike removing outliers (trimming), Winsorization keeps the total number of observations, which preserves statistical power and ensures the sample size remains constant
 
-#library we are using for winsorizition is DescTools
+#library we are using for winsorization is DescTools
 ```{r}
 #install.packages("DescTools") install this package if you dont already have it!
 library(DescTools)
 
 ```
-#staring with SP volatility, I will take the natural log before winsorizing 
-#Stock price volatility is log-normally distributed. This means you have a massive "clump" of low-volatility days and a "long tail" of extreme high-volatility days (crises, earnings misses, etc.) When you take the Log, you "pull" that long right-tail toward the center and "stretch" the clump. makes the distribution look like a normal distribution
-#This sequence ensures that outliers are identified and mitigated within a symmetric distribution, preventing the loss of economically significant variations in the right-tail of the raw volatility data.
+# Starting with SP volatility, I will take the natural log before winsorizing 
+# Stock price volatility is log-normally distributed. This means you have a massive "clump" of low-volatility days and a "long tail" of extreme high-volatility days (crises, earnings misses, etc.) When you take the Log, you "pull" that long right-tail toward the center and "stretch" the clump. makes the distribution look like a normal distribution
+# This sequence ensures that outliers are identified and mitigated within a symmetric distribution, preventing the loss of economically significant variations in the right-tail of the raw volatility data.
 ```{r}
 # Create Log Volatility (adding a tiny amount if there are zeros, though rare in vol), adds a column to our dataframe called log_vol!
 d501$log_vol <- log(d501$SP.Volatility + 1)
 ```
 
-#winsorizing the log of SP volatility -> new variable is called wins_log_vol!
-#also winsorizing the ESG momentum variable but more conservatively. By winsorizing at 5%, we are more likely to "clip" these artificial jumps (differences in rating methodology), ensuring your model isn't being driven by bureaucratic changes at rating agencies. Extreme positive ESG momentum is sometimes the result of a firm launching a massive PR campaign or a one-time sustainability report that may be "greenwashing." By being more conservative (5%), we dampen the influence of these potentially "fake" momentum spikes, focusing our model on firms making steady, moderate improvements.
+# Winsorizing the log of SP volatility -> new variable is called wins_log_vol!
+# Also winsorizing the ESG momentum variable, but more conservatively (0.05% and 0.995%). This is done so that we can truly see the effects of ESG Momentum on our dependent variable, while removing heavy outliers.
 ```{r}
 # Winsorize the Log Volatility at 1% and 99%
 d501$wins_log_vol <- DescTools::Winsorize(d501$log_vol, val = quantile(x = d501$log_vol, probs = c(0.01, 0.99), na.rm = TRUE))
 
-# Winsorize the ESG Momentum! dont need to take the log first for this one, winsorizing at 0.5% and 99.5% to remove truly impossible data points while stil being conservative!
+# Winsorize the ESG Momentum! Don't need to take the log first for this one, winsorizing at 0.5% and 99.5% to remove truly impossible data points while still being conservative!
 d501$wins_esg_mom <- DescTools::Winsorize(d501$ESG.Momentum, val = quantile(x= d501$ESG.Momentum, probs = c(0.005, 0.995), na.rm = TRUE))
 
 ```
 
-#making sure this worked
+# Verifying this worked:
 ```{r}
 #install.packages("mosaic") install this package if you dont already have it
 library(mosaic)
 ```
 
 ```{r}
-favstats(~SP.Volatility, data=d501) #checking the means of these variable to see if winsorization worked!!
+favstats(~SP.Volatility, data=d501) #checking the means of these variables to see if winsorization worked!!
 favstats(~wins_log_vol, data=d501)
 ```
-#worked!! the max and median values are way different now! The raw S&P volatility data exhibited extreme right-skewness and leptokurtosis, with a maximum value (496.09) exceeding the mean (4.84) by a factor of 100. unsuitable for linear regression as it violates the assumption of normality and risks outlier-driven results. Following a natural log transformation and winsorization, the mean (1.20) and median (1.04) were successfully aligned, and the standard deviation was reduced from 16.94 to 0.79. This normalization ensures that the subsequent panel regression estimates are robust and not unduly influenced by idiosyncratic volatility spikes.
+#worked!! The max and median values are way different now! The raw S&P volatility data exhibited extreme right-skewness and leptokurtosis, with a maximum value (496.09) exceeding the mean (4.84) by a factor of 100. unsuitable for linear regression as it violates the assumption of normality and risks outlier-driven results. Following a natural log transformation and winsorization, the mean (1.20) and median (1.04) were successfully aligned, and the standard deviation was reduced from 16.94 to 0.79. This normalization ensures that the subsequent panel regression estimates are robust and not unduly influenced by idiosyncratic volatility spikes.
 
 
-#re-running the QQplot for ESG Momentum after it has been winsorizied
+# re-running the QQplot for ESG Momentum after it has been winsorized
 ```{r}
 library(ggplot2)
 ggplot(d501, aes(sample = wins_esg_mom)) +
@@ -201,9 +205,9 @@ ggplot(d501, aes(sample = wins_esg_mom)) +
   labs(title = "QQ Plot: ESG Momentum Score- Winsorizied") +
   theme_minimal()
 ```
-#as we can see, the tails still curve away aggressively, should do something else too to try and linearize the data. Will still run SP volatility QQplot first to see how that changed things
+#as we can see, the tails still curve away aggressively, so we should do something else too to try and linearize the data. Will still run SP volatility QQplot first to see how that changed things
 
-#For ESG momentum, we should not take the log before winsorizing ESG momentum because ESG momentum is the change score, which means unlike SP volatility it can be negative, cannot take the log of a negative number. logging a small decimal like 0.01 creates large negative numbers which can actually increase the skewness?
+#For ESG momentum, we should not take the log before winsorizing ESG momentum because ESG momentum is the change score, which means, unlike SP volatility it can be negative, cannot take the log of a negative number. logging a small decimal like 0.01 creates large negative numbers which can actually increase the skewness
 
 #looking at how our transformation for SP volatility has affected the data below:
 
@@ -219,7 +223,7 @@ ggplot(vol_filtered_log, aes(sample = `wins_log_vol`)) +
   theme_minimal()
 ```
 #massive improvement!! roughly 90% of our data for SP volatility follows the normal distribution. 
-#In terms of the top right shelf we see, the winzoration is at work there. By capping the top 1%, we have told R that anything above this specific value is not equal to this value. 
+#In terms of the top right shelf, we see the winzoration is at work there. By capping the top 1%, we have told R that anything above this specific value is not equal to this value. 
 #For the bottom left, our data now has fewer extreme low volatility values than a perfect bell curve, usually this is not really an issue since in financial data we are much more concerned aboyt extreme high volatility, having light tails on the low end is less damaging to a regression!!
 
 #also gonna re-run the histogram for the SP volatility
@@ -232,7 +236,6 @@ ggplot(d501, aes(x = `wins_log_vol`)) +
        y = "Frequency") +
   theme_minimal()
 ```
-
 
 #still need to do something about ESG momentum, taking the log is a bad idea, bc if we try log(x+1), logging the values between 0 anf 1 would create a negative spike, we get large negative numbers. Not good for RQ1 and RQ3 bc it would impact momentum.
 
@@ -272,10 +275,10 @@ ggplot(d501, aes(x = `stand_esg_mom`)) +
   theme_minimal()
 ```
 #This worked, the bulk of the data is centered around 0, and the x-axis is now the standard deviation
-#the reason it still looks skewed is that the standardication only changes the scale of the values not the shape of the distribution
-#should be fine for a regression bc we have capped the extreme outliers through winsorization and made the magnitude of the jumps statistically managable
+# The reason it still looks skewed is that the standardization only changes the scale of the values, not the shape of the distribution
+#should be fine for a regression bc we have capped the extreme outliers through winsorization and made the magnitude of the jumps statistically manageable
 
-#how are things looking now if we compare standaridzed ESG and the winsorized/log of SP volatility?
+#how are things looking now if we compare standardized ESG and the winsorized/log of SP volatility?
 ```{r}
 ggplot(d501, aes(x = `stand_esg_mom`, y = `wins_log_vol`)) +
   geom_point(alpha = 0.4, color = "steelblue") +
@@ -286,16 +289,16 @@ ggplot(d501, aes(x = `stand_esg_mom`, y = `wins_log_vol`)) +
        y = "SP Volatility") +
   theme_minimal()
 ```
-#the red line is showing a slight upward slope from left to right, suggesting a positive correlation between ESG momentum and Volatility tends to increase slightly. in finance, it is expected that ESG scores lower risk, but I guess ESG momentum may be increasing risk in this case
+# The red line is showing a slight upward slope from left to right, suggesting a positive correlation between ESG momentum and Volatility tends to increase slightly. in finance, it is expected that ESG scores lower risk, but I guess ESG momentum may be increasing risk in this case
 #we see a box shape, the straight horizontal line of dots near the top and a straight vertical line of dots at the right -> these are winsorized boundaries, instead of having a few extreme outliers pulling the red line way up or way out, those values have been capped.
-#interpret this with caution, we still need to control for the fama french factors!! they could explain some of this variance
+#interpret this with caution, we still need to control for the Fama-French factors!! They could explain some of this variance
 
-#IMPORTANT: FOR THE REST OF THE ANALYSIS, WHEN USING ESG MOMENTUM USE stand_esg_mom (this variable has winsorizied ESG momentum conservatively and has standardizied it)
+#IMPORTANT: FOR THE REST OF THE ANALYSIS, WHEN USING ESG MOMENTUM USE stand_esg_mom (this variable has winsorized ESG momentum conservatively and has standardized it)
 
 
 #time to winsorize and standardize the pillars!
 
-#Enviroment
+# Environment
 ```{r}
 #winsorize first 
 d501$wins_esg_mom_E <- DescTools::Winsorize(d501$ESG.Mom.Env, val = quantile(x= d501$ESG.Mom.Env, probs = c(0.005, 0.995), na.rm = TRUE))
@@ -314,7 +317,7 @@ ggplot(d501, aes(x = `stand_esg_mom_E`)) +
        y = "Frequency") +
   theme_minimal()
 ```
-#success, this scale now shows the SD for the enviromental pillar! this means it has gathered most of the outliers and plotted it correctly. even tho the data is still right skewed it is much more compact than before!
+#success, this scale now shows the SD for the environmental pillar! This means it has gathered most of the outliers and plotted them correctly. Even though the data is still right-skewed, it is much more compact than before!
 
 #winsorize and standardize the social and governance pillar
 ```{r}
@@ -346,9 +349,9 @@ ggplot(d501, aes(x = `stand_esg_mom_G`)) +
        y = "Frequency") +
   theme_minimal()
 ```
-#overall pretty successful, we still see that governance is more spread out that the social pillar!
+#overall pretty successful, we still see that governance is more spread out than the social pillar!
 
-#next step is to check the assumptions of a panel regression: linearity between the indepndent and dependent variables, strict ecogenity (the explanatory variables are uncorrelated with the error term), indepndent variables are not perfectly correlated with eachother (will need to check VIF), homoscedasticty (the error terms have constant variance and are not correlated over time for a given entitiy, no serial correlation)
+#next step is to check the assumptions of a panel regression: linearity between the independent and dependent variables, strict ecogenity (the explanatory variables are uncorrelated with the error term), independent variables are not perfectly correlated with eachother (will need to check VIF), homoscedasticty (the error terms have constant variance and are not correlated over time for a given entitiy, no serial correlation)
 
 #loading in the libraries we need
 ```{r}
@@ -358,11 +361,11 @@ library(zoo)
 
 
 
-#IMPORTANT!!!!! NOW WE NEED TO BE ANALYSIZNG USING wins_log_vol -> THIS IS THE FOWARD LOOKING SP VOLATILITY VARIABLE THAT HAS BEEN TRANSFORMED!
+#IMPORTANT!!!!! NOW WE NEED TO BE ANALYZING USING wins_log_vol -> THIS IS THE FORWARD LOOKING SP VOLATILITY VARIABLE THAT HAS BEEN TRANSFORMED!
 ##IMPORTANT!!! FOR ESG MOMENTUM, USE THE VARIABLE CALLED stand_esg_mom
 
 
-#1. Check linarity using a partial residual plot, should be okay considering we already transformed the data but we should still check
+#1. Check linarity using a partial residual plot, which should be okay considering we already transformed the data, but we should still check
 ```{r}
 library(ggplot2)
 
@@ -375,14 +378,14 @@ ggplot(d501, aes(x = `stand_esg_mom`, y = wins_log_vol)) +
   theme_minimal()
 ```
 
-#mostly linear but with some curvature. The vast majority of your data points (the dense dark area between fitted values 1.0 and 2.0) are centered around the zero line. This means for most of our firms, the linear model is predicting volatility accurately. residuals are fairly symmetrical around the zero line. we don't have a massive "rainbow" shape that would indicate a totally wrong model.
+#mostly linear but with some curvature. The vast majority of your data points (the dense dark area between fitted values 1.0 and 2.0) are centred around the zero line. This means that for most of our firms, the linear model is predicting volatility accurately. The residuals are fairly symmetrical around the zero line. We don't have a massive "rainbow" shape that would indicate a totally wrong model.
 
-#2. Multicolinarity (checking using the VIF)
+#2. Multicollinearity (checking using the VIF)
 
 ```{r}
 library(car)
 
-# Define a standard OLS model using our transformed variables for VIF check
+# Define a standard OLS model using our transformed variables for the VIF check
 fit_ols <- lm(wins_log_vol ~ stand_esg_mom + `Log.MCap` + `Book.to.Mkt` + ROA + `Asset.Growth`, 
               data = d501)
 
@@ -390,10 +393,10 @@ fit_ols <- lm(wins_log_vol ~ stand_esg_mom + `Log.MCap` + `Book.to.Mkt` + ROA + 
 vif_results <- vif(fit_ols)
 print(vif_results)
 ```
-#all of these are less than 5, which means we are good!! No issues of multicolinarity!! a VIF = 1 means no correlation, VIF of 5 to 10 means high multicolinarity
+#all of these are less than 5, which means we are good!! No issues of multicollinearity!! A VIF = 1 means no correlation, a VIF of 5 to 10 means high multicollinearity
 
 
-#3. Testing for strict exogenity (variables should not be endogenous)! We do not want our variables to be correlated with the error term. common way to do this is to include a lead of the independent variable in the regression. hopefully we do not violate this lol
+#3. Testing for strict exogeneity (variables should not be endogenous)! We do not want our variables to be correlated with the error term. A common way to do this is to include a lead of the independent variable in the regression. 
 #lead test-> checks if the future ESG score is caused by current volatility (reverse causality). would justify us using fixed effects
 
 ```{r}
@@ -414,10 +417,10 @@ exog_check <- feols(wins_log_vol ~ stand_esg_mom + lead(stand_esg_mom, 1) +
 summary(exog_check)
 ```
 
-#yay, our lead ESG momentum variable is insignificant (p=0.942), which means we have not violated strict exogentiy means that the future changes in ESG have no relationship with current volatility. it supports the idea that the "cause" only goes from the present to the future.
+#yay, our lead ESG momentum variable is insignificant (p=0.942), which means we have not violated strict exogentiy means that the future changes in ESG have no relationship with current volatility. It supports the idea that the "cause" only goes from the present to the future.
 
 
-#wu-hausman -> checks if current ESG is correlated with current hidden factors (omitted variable bias). For this test you need to create an instrumental variable (correlated with IV and not correclated with the error term expcet through ESG momentum)
+#wu-hausman -> checks if current ESG is correlated with current hidden factors (omitted variable bias). For this test, you need to create an instrumental variable (correlated with IV and not correlated with the error term expected through ESG momentum)
 
 ```{r}
 # 1. Create the Instrument (Industry-Year Average ESG Momentum)
@@ -439,10 +442,10 @@ model_iv <- feols(wins_log_vol ~ Log.MCap + Book.to.Mkt + ROA + Asset.Growth |
 summary(model_iv, stage = 1:2)
 fixest::fitstat(model_iv, ~ wh + ivf)
 ```
-#the p-value for the fit is insignificant, this is good! We fail to reject Ho and we are justifyed in using the standard fixed effects model. this measn ESG momentum is not singificantly correlated with the error term, so fixed effects is consistent and more efficent
+#the p-value for the fit is insignificant, this is good! We fail to reject Ho, and we are justified in using the standard fixed effects model. This means ESG momentum is not significantly correlated with the error term, so fixed effects is consistent and more efficient
 
 
-#4. Homoscedasicty (in financial data we almost always find heterosecdascity, different variances across firms), and serial correlation (volatility is sticky over time). if this is the case use the clustered standard errors (already wrote about this in the proposal)
+#4. Homoscedasticity (in financial data, we almost always find heteroscedasticity, different variances across firms), and serial correlation (volatility is sticky over time). If this is the case use the clustered standard errors (already wrote about this in the proposal)
 
 ```{r}
 library(lmtest)
@@ -456,7 +459,7 @@ model_ols <- lm(wins_log_vol ~ stand_esg_mom + `Log.MCap` + `Book.to.Mkt` + ROA 
 # H1: Heteroscedasticity (Variance changes with X)
 bptest(model_ols)
 ```
-#we did expect to fail this test, and we did with a singificant p-value. again this is expected in panel data, so we do have heteroscedascity. this is very common for stock market data, means the "size" of our errors changes depending on the firm's size, ESG score or volatility. This means our standard errors are biased. SOLUTION: we use the clustered standard errors (which we are already doing with the feols function and cluster = ~Security). this fixes our p-value of our coefficents.
+# We did expect to fail this test, and we did with a significant p-value. Again, this is expected in panel data, so we do have heteroscedasticity. This is very common for stock market data, which means the "size" of our errors changes depending on the firm's size, ESG score or volatility. This means our standard errors are biased. SOLUTION: We use the clustered standard errors (which we are already doing with the feols function and cluster = ~Security). This fixes the p-value of our coefficients.
 
 
 #Below would be our regression model for RQ1!!
@@ -464,6 +467,20 @@ bptest(model_ols)
 #DV: FINAL_SPVOL (looks at SP volatility for a specific company over the next four quarters)
 #controls, Fama french 5 (just to confirm): Log MCAP, Book to Mkt, ROA, Assest growth
 #do not need to control for industry
+
+# Baseline OLS Model
+```{r}
+# With the Original Variables
+model <- lm(SP.Volatility ~ ESG.Momentum + Log.MCap + Book.to.Mkt + ROA + Asset.Growth, data = d501)
+summary(model)
+plot(model)
+
+# With Transformed Data
+model2 <- lm(wins_log_vol ~ stand_esg_mom + Log.MCap + Book.to.Mkt + ROA + Asset.Growth, data = d501)
+summary(model2)
+plot(model2)
+```
+
 
 ```{r}
 # Run the Fixed Effects Model
@@ -479,20 +496,20 @@ model_rq1_final <- feols(wins_log_vol ~ stand_esg_mom +
 summary(model_rq1_final)
 ```
 
-#our results are statisticall singificant, with a p-value = 0.0005 which is lower than 0.05! our ESG momentum variable is now highly singnificant!
-#how to interpert this (remeber esg momentum is now standardized): for every 1 standard deviation increase in ESG momentu, the log if the forward looking volatility increased by 4.7%. We originally expected ESG momentum to act as a risk mitigator (based on literature from the US markets), but here our coefficent is positive, suggesting that firms with high ESG momentum are seeing higher volatility in this specific window. We will need to discuss why we may think this is
+#our results are statisticall singificant, with a p-value = 0.0005 which is lower than 0.05! our ESG momentum variable is now highly significant!
+#how to interpret this (remember ESG momentum is now standardized): for every 1 standard deviation increase in ESG momentum, the log of the forward-looking volatility increased by 4.7%. We originally expected ESG momentum to act as a risk mitigator (based on literature from the US markets), but here our coefficient is positive, suggesting that firms with high ESG momentum are seeing higher volatility in this specific window. We will need to discuss why we may think this is
 
-#log.mcap is our strongest control, shows that as firm size increases, the model predicted volatility also increases here. 
+#log.mcap is our strongest control, showing that as firm size increases, the model-predicted volatility also increases here. 
 
-#book to mkt, ROA and assest growth all have insignificant p-values, meaning they are not statistically significant in this specific model, not helping or hurting our prediction
+#book to mkt, ROA and asset growth all have insignificant p-values, meaning they are not statistically significant in this specific model, not helping or hurting our prediction
 
-#summary of the model: fixed effects for industry type and the year, not interested in seeing the effect of industry for this RQ, future analysis will look at this more closely. this result is not just a result of a "bad year" or a "volatile industry
+#summary of the model: fixed effects for industry type and the year, not interested in seeing the effect of industry for this RQ, future analysis will look at this more closely. This result is not just a result of a "bad year" or a "volatile industry
 #we also have a standard clustered error using the firms (security) means the model accounts for the fact that observations from the same company are related over time. This makes our p-values much more "honest" and reliable.
-#lots of observations which means we have high statistical power!
+#lots of observations, which means we have high statistical power!
 
-#looking at R-squared: adjusted R2 = our model explains 24.3% of the total variation in stock volatility. this is good! Within R2 = tells us that 16.9% of the variation within industries and years is explained by our variables
+#looking at R-squared: adjusted R2 = our model explains 24.3% of the total variation in stock volatility. This is good! Within R2 = tells us that 16.9% of the variation within industries and years is explained by our variables
 
-#next steps: the fact that stand_esg_mom and Log.MCap are both positive is surprising! maybe this is explaining by the company size or the indsutry type, running analysis for RQ2 and RQ3!
+#next steps: the fact that stand_esg_mom and Log.MCap is both positive and surprising! Maybe this is explained by the company size or the industry type, running analysis for RQ2 and RQ3!
 
 
 #Re-running original regression, not using transformed variables to get a sense of the "baseline relationship". Important for our report
@@ -519,7 +536,7 @@ library(performance)
 # This will check normality, heteroscedasticity, and outliers all at once
 check_model(model_rq1_final, check = c("normality", "homogeneity", "outliers"))
 ```
-#this is very bad, extremely right skewed, what we observed earlier
+# This is very bad, extremely right-skewed, what we observed earlier
 
 
 
